@@ -2,12 +2,14 @@ package tplm
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template" // what about text/template, is it viable to support both with one package?
 	"os"
+	"path"
 )
 
 /* structures to hold our parsed config file. */
-type TPLM struct {
+type TPLC struct {
 	TplDir  string
 	Root    string
 	Helpers []string
@@ -19,48 +21,128 @@ type TPL struct {
 	Files []string
 }
 
-func Parse(config string) (*TPLM, error) {
+type TplmError struct {
+	Where string
+	Err   error
+}
 
-	tplm := &TPLM{}
+type TPLM struct {
+	templates map[string]*template.Template
+	root      *template.Template
+}
+
+func (e TplmError) Error() string {
+	return fmt.Sprintf("%v: %v", e.Where, e.Err)
+}
+
+const (
+	PARSE_ERROR  string = "TPLC error in Parse"
+	APPEND_ERROR string = "TPLC error in appendRoot"
+	LOAD_ERROR   string = "TPLC error in Load"
+)
+
+func Parse(config string) (*TPLC, error) {
+
+	tplc := &TPLC{}
 
 	file, err := os.Open(config)
 	defer file.Close()
 	if err != nil {
-		return nil, err
+		return nil, TplmError{PARSE_ERROR, err}
 	}
 	dec := json.NewDecoder(file)
 
-	err = dec.Decode(tplm)
-	return tplm, err
+	err = dec.Decode(tplc)
+	if err != nil {
+		err = TplmError{PARSE_ERROR, err}
+	}
+	return tplc, err
 }
 
-func (tplm *TPLM) Load() map[string]*template.Template {
-
-	templates = make(map[string]*template.Template)
-
-	/* create the root template, it'll be cloned and used to parse all files. */
-	templates["root"] = template.Must(template.New("root").Parse(t.Root))
-
-	/* load helper functions into the root handler. */
-	template.Must(templates["root"].ParseFiles(t.Helpers...))
-
-	/* for each template defined in the config file, clone root and parse
-	the defined files into the given name */
-	for _, tpl := range tplm.Tpls {
-		root := templates["root"].Clone()
-		templates[tpl.Name] = template.Must(root.ParseFiles(tpl.Files...))
+/* add the TplDir string to the paths if it's supplied */
+func (tplc *TPLC) appendRoot() {
+	if tplc.TplDir == "" {
+		return
 	}
 
-	return templates, err
+	tplc.Root = path.Join(tplc.TplDir, tplc.Root)
+	for idx, _ := range tplc.Helpers {
+		tplc.Helpers[idx] = path.Join(tplc.TplDir, tplc.Helpers[idx])
+	}
+	for _, tpl := range tplc.Tpls {
+		for idx, _ := range tpl.Files {
+			tpl.Files[idx] = path.Join(tplc.TplDir, tpl.Files[idx])
+		}
+	}
 }
 
-func LoadConfig(config string) (map[string]*template.Template, error) {
+func (tpl TPL) String() string {
+	return fmt.Sprintf("\n\t{\n\t\tname:%s, \n\t\tfiles:{\n\t\t\t%s\n\t\t}\n\t}\n\t", tpl.Name, tpl.Files)
+}
 
-	tplm, err := Parse(config)
+func (t TPLC) String() string {
+	var output = ""
+
+	output = fmt.Sprintf("{\nroot:%s, \nhelpers:%v, \ntpls:%v\n}", t.Root, t.Helpers, t.Tpls)
+	return output
+}
+
+/* get rid of these panics later for actual error returns. */
+func (tplc *TPLC) Load() (*TPLM, error) {
+
+	var err error
+	tplm := &TPLM{}
+
+	tplm.templates = make(map[string]*template.Template)
+
+	// adjust our file definitions to take into account the TplDir option from
+	//	the config
+	tplc.appendRoot()
+	/* create the root template, it'll be cloned and used to parse all files. */
+	tplm.root, err = template.New("root").Parse(tplc.Root)
+	if err != nil {
+		return nil, TplmError{LOAD_ERROR, err}
+	}
+
+	/* load helper functions into the root handler. */
+	if len(tplc.Helpers) > 0 {
+		_, err = tplm.root.ParseFiles(tplc.Helpers...)
+		if err != nil {
+			return nil, TplmError{LOAD_ERROR, err}
+		}
+	}
+
+	// for each template defined in the config file, clone root and parse
+	// the defined files into the given name
+	for _, tpl := range tplc.Tpls {
+
+		if len(tpl.Files) <= 0 {
+			return nil, TplmError{LOAD_ERROR, fmt.Errorf("template definition:%s has no files defined", tpl.Name)}
+		}
+
+		root, err := tplm.root.Clone()
+		if err != nil {
+			return nil, TplmError{LOAD_ERROR, err}
+		}
+		tplm.templates[tpl.Name], err = root.ParseFiles(tpl.Files...)
+		if err != nil {
+			return nil, TplmError{LOAD_ERROR, err}
+		}
+	}
+
+	return tplm, nil
+}
+
+func LoadConfig(config string) (*TPLM, error) {
+
+	tplc, err := Parse(config)
 	if err != nil {
 		return nil, err
 	}
 
-	templates := tplm.Load()
-	return templates, nil
+	tplm, err := tplc.Load()
+	if err != nil {
+		return nil, err
+	}
+	return tplm, nil
 }
