@@ -93,20 +93,20 @@ func (tplc *TPLC) Load() (*TPLM, error) {
 	var err error
 	tplm := &TPLM{}
 
-	tplm.templates = make(map[string]*template.Template)
+	tplm.Templates = make(map[string]*template.Template)
 
 	// adjust our file definitions to take into account the TplDir option from
 	//	the config
 	tplc.appendRoot()
 	/* create the root template, it'll be cloned and used to parse all files. */
-	tplm.root, err = template.New("root").Parse(tplc.Root)
+	tplm.Root, err = template.New("root").Parse(tplc.Root)
 	if err != nil {
 		return nil, TplmError{LOAD_ERROR, err}
 	}
 
 	/* load helper functions into the root handler. */
 	if len(tplc.Helpers) > 0 {
-		_, err = tplm.root.ParseFiles(tplc.Helpers...)
+		_, err = tplm.Root.ParseFiles(tplc.Helpers...)
 		if err != nil {
 			return nil, TplmError{LOAD_ERROR, err}
 		}
@@ -120,11 +120,11 @@ func (tplc *TPLC) Load() (*TPLM, error) {
 			return nil, TplmError{LOAD_ERROR, fmt.Errorf("template definition:%s has no files defined", tpl.Name)}
 		}
 
-		root, err := tplm.root.Clone()
+		root, err := tplm.Root.Clone()
 		if err != nil {
 			return nil, TplmError{LOAD_ERROR, err}
 		}
-		tplm.templates[tpl.Name], err = root.ParseFiles(tpl.Files...)
+		tplm.Templates[tpl.Name], err = root.ParseFiles(tpl.Files...)
 		if err != nil {
 			return nil, TplmError{LOAD_ERROR, err}
 		}
