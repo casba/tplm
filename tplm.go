@@ -27,8 +27,8 @@ type TplmError struct {
 }
 
 type TPLM struct {
-	templates map[string]*template.Template
-	root      *template.Template
+	Templates map[string]*template.Template
+	Root      *template.Template
 }
 
 func (e TplmError) Error() string {
